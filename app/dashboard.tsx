@@ -1180,7 +1180,7 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
       setSystemHealth((current) => ({ ...current, generated_at: next.timestamp, packet_age_seconds: 0, connection: "live", data_source: next.source }));
     };
     void refreshWeather();
-    const timer = window.setInterval(refreshWeather, 10 * 60 * 1000);
+    const timer = window.setInterval(refreshWeather, 5 * 60 * 1000);
     return () => {
       active = false;
       window.clearInterval(timer);
@@ -1548,8 +1548,20 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
       : "safe";
   const heatStatusLabel = heatStatus === "danger" ? "Severe heat stress risk" : heatStatus === "watch" ? "Heat stress watch" : "Heat conditions normal";
   const activeAlert = spray.alerts?.find((alert) => alert.severity === "red") || spray.alerts?.find((alert) => alert.severity === "yellow");
-  const sensorReady = (key: string) => reading.source === "demo" || reading.source === "weather" || reading.sensor_status?.[key] !== false;
-  const liveReadingNote = reading.source === "weather" ? "LIVE · OPEN-METEO" : t("live");
+  const weatherReading = reading.source === "weather" || Boolean(reading.data_provider?.toLowerCase().includes("open-meteo"));
+  const sensorReady = (key: string) =>
+    reading.source !== "demo" && reading.sensor_status?.[key] !== false;
+  const weatherUpdatedAt = Number.isNaN(new Date(reading.timestamp).getTime())
+    ? ""
+    : new Date(reading.timestamp).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+  const liveReadingNote = reading.source === "weather"
+    ? `FORECAST NOW · ${weatherUpdatedAt}`
+    : reading.source === "cached" && weatherReading
+      ? `LAST FORECAST · ${weatherUpdatedAt}`
+      : reading.source === "demo"
+        ? "WEATHER API UNAVAILABLE"
+        : t("live");
+  const solarRadiationWm2 = reading.solar_radiation_wm2 ?? Math.round(reading.light_lux / 120);
   const soilLabel = spray.soil_condition?.label || (reading.soil_moisture_pct < 30 ? "Dry" : reading.soil_moisture_pct > 75 ? "Too wet" : "Optimal");
   const demoScenarioCopy = {
     normal: { severity: "safe" as const, title: "Field conditions normal", message: "All monitored values are inside the configured limits.", action: "Farm work may continue", temperature: 30.4, humidity: 64, rain: 0, wind: 8.2, pattern: "none" },
@@ -1577,7 +1589,6 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
     setDemoBusy(scenario);
     setDemoScenario(scenario);
     setDemoAcknowledged(false);
-    setReading((current) => ({ ...current, timestamp: now, temperature_c: selected.temperature, humidity_pct: selected.humidity, rainfall_mm_h: selected.rain, wind_speed_kmh: selected.wind, source: "demo" }));
     setSpray((current) => ({ ...current, severity: selected.severity, spray_allowed: scenario === "normal", title: selected.title, reason: selected.message, confidence: 94, alerts: scenario === "normal" ? [] : [{ code: `demo_${scenario}`, severity: "red", title: selected.title, message: selected.message, action: selected.action }] }));
     setEarlyWarning((current) => ({ ...current, status: selected.severity, summary: selected.message, source: "cached", current: { temperature_c: selected.temperature, wind_speed_kmh: selected.wind, rainfall_mm_h: selected.rain, humidity_pct: selected.humidity } }));
     setSystemHealth((current) => ({ ...current, generated_at: now, packet_age_seconds: 0, connection: "offline/cached", data_source: "demo", actuator: { ...current.actuator, buzzer_active: scenario !== "normal", buzzer_pattern: selected.pattern, spray_relay_locked: scenario !== "normal" } }));
@@ -2014,10 +2025,10 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
                 />
                 <SensorCard
                   icon={Lightbulb}
-                  label={t("light")}
-                  value={sensorReady("light_ok") ? (reading.light_lux / 1000).toFixed(1) : "—"}
-                  unit={sensorReady("light_ok") ? "klux" : ""}
-                  note={sensorReady("light_ok") ? (reading.source === "weather" ? "MODELLED · OPEN-METEO" : t("live")) : "SENSOR NOT CONNECTED"}
+                  label={weatherReading ? "Solar intensity" : t("light")}
+                  value={sensorReady("light_ok") ? (weatherReading ? solarRadiationWm2 : (reading.light_lux / 1000).toFixed(1)) : "—"}
+                  unit={sensorReady("light_ok") ? (weatherReading ? "W/m²" : "klux") : ""}
+                  note={sensorReady("light_ok") ? (weatherReading ? `FORECAST SOLAR · ${weatherUpdatedAt}` : t("live")) : "WEATHER API UNAVAILABLE"}
                 />
                 <SensorCard
                   icon={Sprout}
