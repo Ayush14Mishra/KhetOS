@@ -175,6 +175,7 @@ type OpenMeteoCurrent = {
   wind_speed_10m?: number;
   wind_direction_10m?: number;
   shortwave_radiation?: number;
+  shortwave_radiation_instant?: number;
   soil_moisture_0_to_1cm?: number;
   surface_pressure?: number;
 };
@@ -201,10 +202,16 @@ export async function liveWeatherTelemetry(
       "wind_speed_10m",
       "wind_direction_10m",
       "shortwave_radiation",
+      "shortwave_radiation_instant",
       "soil_moisture_0_to_1cm",
       "surface_pressure",
     ].join(","),
     timezone: "auto",
+    models: "best_match",
+    forecast_minutely_15: "1",
+    temperature_unit: "celsius",
+    wind_speed_unit: "kmh",
+    precipitation_unit: "mm",
   });
   const cacheKey = `${CACHE_PREFIX}open-meteo:${latitude.toFixed(4)},${longitude.toFixed(4)}`;
 
@@ -221,7 +228,10 @@ export async function liveWeatherTelemetry(
 
     const intervalSeconds = Math.max(1, Number(current.interval || 3600));
     const precipitationRate = Number(current.precipitation ?? current.rain ?? 0) * 3600 / intervalSeconds;
-    const radiationWm2 = Math.max(0, Number(current.shortwave_radiation || 0));
+    const radiationWm2 = Math.max(
+      0,
+      Number(current.shortwave_radiation_instant ?? current.shortwave_radiation ?? 0),
+    );
     const soilVolumetric = Number(current.soil_moisture_0_to_1cm);
     const data: Telemetry = {
       ...fallback,
@@ -234,7 +244,10 @@ export async function liveWeatherTelemetry(
       rain_detected: precipitationRate > 0,
       wind_speed_kmh: Number(Number(current.wind_speed_10m ?? fallback.wind_speed_kmh).toFixed(1)),
       wind_direction_deg: Math.round(Number(current.wind_direction_10m ?? fallback.wind_direction_deg)),
-      // Approximate daylight illuminance using 120 lm/W luminous efficacy.
+      // Keep the API's native solar-radiation value for an honest forecast
+      // reading. Lux is retained only for backwards compatibility with the
+      // hardware card and is explicitly presented as an estimate in the UI.
+      solar_radiation_wm2: Math.round(radiationWm2),
       light_lux: Math.round(radiationWm2 * 120),
       soil_moisture_pct: Number.isFinite(soilVolumetric)
         ? Math.round(Math.min(1, Math.max(0, soilVolumetric)) * 100)

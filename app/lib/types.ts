@@ -12,6 +12,7 @@ export type Telemetry = {
   wind_speed_kmh: number;
   wind_direction_deg: number;
   light_lux: number;
+  solar_radiation_wm2?: number;
   soil_moisture_pct: number;
   pressure_hpa: number;
   battery_pct: number;
