@@ -59,6 +59,7 @@ import {
   getLocalProfiles,
   jury as fetchJury,
   latestTelemetry,
+  liveWeatherTelemetry,
   listAuctions,
   listFarmerActions,
   marketPrices,
@@ -727,7 +728,9 @@ function StatusChip({
     <span className={`source-chip ${safeSource}`}>
       <span />
       {online
-        ? safeSource === "live" || safeSource === "ble"
+        ? safeSource === "weather"
+          ? "WEATHER LIVE"
+          : safeSource === "live" || safeSource === "ble"
           ? t("live")
           : t("workingOffline")
         : t("workingOffline")}
@@ -1121,6 +1124,7 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
         source: "demo" as const,
       };
       const nextReading = await latestTelemetry("FARM-001", fallback);
+      if (nextReading.source === "demo") return;
       setReading(nextReading);
       setSpray(await fetchDecision("FARM-001", fallbackDecision, profile?.crop, profile?.growth_stage));
       setEarlyWarning(await fetchEarlyWarning("FARM-001", {
@@ -1134,9 +1138,54 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
         },
       }, profile?.crop, profile?.growth_stage));
       setSystemHealth(await fetchSystemStatus("FARM-001", fallbackSystemStatus));
-    }, 1000);
+    }, 5000);
     return () => window.clearInterval(timer);
   }, [online, profile?.crop, profile?.growth_stage]);
+  useEffect(() => {
+    let active = true;
+    const latitude = profile?.latitude || defaultProfile.latitude;
+    const longitude = profile?.longitude || defaultProfile.longitude;
+    const refreshWeather = async () => {
+      const next = await liveWeatherTelemetry(latitude, longitude, fallbackTelemetry());
+      if (!active || next.source === "demo") return;
+      setReading((current) => current.source === "live" || current.source === "ble" ? current : next);
+
+      const heatDanger = next.temperature_c >= 38;
+      const highWind = next.wind_speed_kmh > 15;
+      const activeRain = next.rainfall_mm_h > 0.2;
+      const unsafe = heatDanger || highWind || activeRain;
+      const reason = heatDanger
+        ? `Heat stress risk at ${next.temperature_c}°C.`
+        : highWind
+          ? `Wind ${next.wind_speed_kmh} km/h is above the safe spraying limit.`
+          : activeRain
+            ? `Rainfall ${next.rainfall_mm_h} mm/h makes spraying ineffective.`
+            : "Live weather conditions are inside the configured limits.";
+      setSpray((current) => ({
+        ...current,
+        severity: unsafe ? "danger" : "safe",
+        spray_allowed: !unsafe,
+        title: unsafe ? "Weather-based field warning" : "Weather conditions normal",
+        reason,
+        confidence: 90,
+        alerts: unsafe ? [{ code: "weather_live", severity: "red", title: "Weather-based field warning", message: reason, action: highWind || activeRain ? "Postpone spraying" : "Inspect crop and avoid heat exposure" }] : [],
+      }));
+      setEarlyWarning((current) => ({
+        ...current,
+        status: unsafe ? "danger" : "safe",
+        summary: reason,
+        source: next.source,
+        current: { temperature_c: next.temperature_c, wind_speed_kmh: next.wind_speed_kmh, rainfall_mm_h: next.rainfall_mm_h, humidity_pct: next.humidity_pct },
+      }));
+      setSystemHealth((current) => ({ ...current, generated_at: next.timestamp, packet_age_seconds: 0, connection: "live", data_source: next.source }));
+    };
+    void refreshWeather();
+    const timer = window.setInterval(refreshWeather, 10 * 60 * 1000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [online, profile?.latitude, profile?.longitude]);
   useEffect(() => {
     if (!profile) return;
     const liveFallbackSchemes = fallbackSchemesFor(profile);
@@ -1499,7 +1548,8 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
       : "safe";
   const heatStatusLabel = heatStatus === "danger" ? "Severe heat stress risk" : heatStatus === "watch" ? "Heat stress watch" : "Heat conditions normal";
   const activeAlert = spray.alerts?.find((alert) => alert.severity === "red") || spray.alerts?.find((alert) => alert.severity === "yellow");
-  const sensorReady = (key: string) => reading.source === "demo" || reading.sensor_status?.[key] !== false;
+  const sensorReady = (key: string) => reading.source === "demo" || reading.source === "weather" || reading.sensor_status?.[key] !== false;
+  const liveReadingNote = reading.source === "weather" ? "LIVE · OPEN-METEO" : t("live");
   const soilLabel = spray.soil_condition?.label || (reading.soil_moisture_pct < 30 ? "Dry" : reading.soil_moisture_pct > 75 ? "Too wet" : "Optimal");
   const demoScenarioCopy = {
     normal: { severity: "safe" as const, title: "Field conditions normal", message: "All monitored values are inside the configured limits.", action: "Farm work may continue", temperature: 30.4, humidity: 64, rain: 0, wind: 8.2, pattern: "none" },
@@ -1929,7 +1979,7 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
                   label={t("temperature")}
                   value={sensorReady("temperature_humidity_ok") ? reading.temperature_c : "—"}
                   unit={sensorReady("temperature_humidity_ok") ? "°C" : ""}
-                  note={sensorReady("temperature_humidity_ok") ? t("live") : "SENSOR NOT CONNECTED"}
+                  note={sensorReady("temperature_humidity_ok") ? liveReadingNote : "SENSOR NOT CONNECTED"}
                   risk={sensorReady("temperature_humidity_ok") && reading.temperature_c > 35}
                 />
                 <SensorCard
@@ -1937,14 +1987,14 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
                   label={t("humidity")}
                   value={sensorReady("temperature_humidity_ok") ? reading.humidity_pct : "—"}
                   unit={sensorReady("temperature_humidity_ok") ? "%" : ""}
-                  note={sensorReady("temperature_humidity_ok") ? t("live") : "SENSOR NOT CONNECTED"}
+                  note={sensorReady("temperature_humidity_ok") ? liveReadingNote : "SENSOR NOT CONNECTED"}
                 />
                 <SensorCard
                   icon={CloudSun}
                   label={reading.rain_gauge_type === "raindrop_detector_not_quantitative" ? "Rain detection" : t("rainfall")}
                   value={!sensorReady("rain_detection_ok") ? "—" : reading.rain_gauge_type === "raindrop_detector_not_quantitative" ? (reading.rain_detected ? "YES" : "NO") : reading.rainfall_mm_h}
                   unit={reading.rain_gauge_type === "raindrop_detector_not_quantitative" ? "" : "mm/h"}
-                  note={!sensorReady("rain_detection_ok") ? "SENSOR NOT CONNECTED" : reading.rain_gauge_type === "raindrop_detector_not_quantitative" ? "Detection only · not mm/h" : t("live")}
+                  note={!sensorReady("rain_detection_ok") ? "SENSOR NOT CONNECTED" : reading.rain_gauge_type === "raindrop_detector_not_quantitative" ? "Detection only · not mm/h" : liveReadingNote}
                   risk={reading.rainfall_mm_h > 8}
                 />
                 <SensorCard
@@ -1952,7 +2002,7 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
                   label="Wind speed"
                   value={sensorReady("wind_ok") ? reading.wind_speed_kmh : "—"}
                   unit={sensorReady("wind_ok") ? "km/h" : ""}
-                  note={sensorReady("wind_ok") ? t("live") : "SENSOR NOT CONNECTED"}
+                  note={sensorReady("wind_ok") ? liveReadingNote : "SENSOR NOT CONNECTED"}
                   risk={sensorReady("wind_ok") && reading.wind_speed_kmh > 15}
                 />
                 <SensorCard
@@ -1967,14 +2017,14 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
                   label={t("light")}
                   value={sensorReady("light_ok") ? (reading.light_lux / 1000).toFixed(1) : "—"}
                   unit={sensorReady("light_ok") ? "klux" : ""}
-                  note={sensorReady("light_ok") ? t("live") : "SENSOR NOT CONNECTED"}
+                  note={sensorReady("light_ok") ? (reading.source === "weather" ? "MODELLED · OPEN-METEO" : t("live")) : "SENSOR NOT CONNECTED"}
                 />
                 <SensorCard
                   icon={Sprout}
                   label={t("soil")}
                   value={reading.soil_moisture_pct}
                   unit="%"
-                  note={`${soilLabel} · ${reading.zone_id}`}
+                  note={reading.source === "weather" ? `MODELLED · OPEN-METEO` : `${soilLabel} · ${reading.zone_id}`}
                   risk={reading.soil_moisture_pct < 30}
                 />
               </div>
