@@ -1,4 +1,4 @@
-export type DataMode = "live" | "cached" | "demo" | "ble";
+export type DataMode = "live" | "cached" | "demo" | "ble" | "weather";
 
 export type Telemetry = {
   farm_id: string;
@@ -16,6 +16,7 @@ export type Telemetry = {
   pressure_hpa: number;
   battery_pct: number;
   source: DataMode;
+  data_provider?: string;
   rain_gauge_type?: string;
   rain_tip_count?: number;
   wind_sensor_type?: string;

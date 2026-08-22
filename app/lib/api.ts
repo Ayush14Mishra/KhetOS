@@ -165,6 +165,107 @@ export async function weatherForecast(
   );
 }
 
+type OpenMeteoCurrent = {
+  time?: string;
+  interval?: number;
+  temperature_2m?: number;
+  relative_humidity_2m?: number;
+  precipitation?: number;
+  rain?: number;
+  wind_speed_10m?: number;
+  wind_direction_10m?: number;
+  shortwave_radiation?: number;
+  soil_moisture_0_to_1cm?: number;
+  surface_pressure?: number;
+};
+
+/**
+ * Hardware-independent live readings for the public demo. Open-Meteo provides
+ * current model/observation-blended weather at the saved farm coordinates.
+ * Solar radiation is converted to an approximate outdoor illuminance, while
+ * soil moisture remains clearly identified in the UI as modelled data.
+ */
+export async function liveWeatherTelemetry(
+  latitude: number,
+  longitude: number,
+  fallback: Telemetry,
+): Promise<Telemetry> {
+  const params = new URLSearchParams({
+    latitude: String(latitude),
+    longitude: String(longitude),
+    current: [
+      "temperature_2m",
+      "relative_humidity_2m",
+      "precipitation",
+      "rain",
+      "wind_speed_10m",
+      "wind_direction_10m",
+      "shortwave_radiation",
+      "soil_moisture_0_to_1cm",
+      "surface_pressure",
+    ].join(","),
+    timezone: "auto",
+  });
+  const cacheKey = `${CACHE_PREFIX}open-meteo:${latitude.toFixed(4)},${longitude.toFixed(4)}`;
+
+  try {
+    const response = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`, {
+      cache: "no-store",
+    });
+    if (!response.ok) throw new Error(`Open-Meteo ${response.status}`);
+    const payload = (await response.json()) as { current?: OpenMeteoCurrent };
+    const current = payload.current;
+    if (!current || typeof current.temperature_2m !== "number") {
+      throw new Error("Open-Meteo current conditions unavailable");
+    }
+
+    const intervalSeconds = Math.max(1, Number(current.interval || 3600));
+    const precipitationRate = Number(current.precipitation ?? current.rain ?? 0) * 3600 / intervalSeconds;
+    const radiationWm2 = Math.max(0, Number(current.shortwave_radiation || 0));
+    const soilVolumetric = Number(current.soil_moisture_0_to_1cm);
+    const data: Telemetry = {
+      ...fallback,
+      device_id: "OPEN-METEO",
+      zone_id: fallback.zone_id || "ACR-Z01",
+      timestamp: current.time || new Date().toISOString(),
+      temperature_c: Number(current.temperature_2m.toFixed(1)),
+      humidity_pct: Math.round(Number(current.relative_humidity_2m ?? fallback.humidity_pct)),
+      rainfall_mm_h: Number(Math.max(0, precipitationRate).toFixed(1)),
+      rain_detected: precipitationRate > 0,
+      wind_speed_kmh: Number(Number(current.wind_speed_10m ?? fallback.wind_speed_kmh).toFixed(1)),
+      wind_direction_deg: Math.round(Number(current.wind_direction_10m ?? fallback.wind_direction_deg)),
+      // Approximate daylight illuminance using 120 lm/W luminous efficacy.
+      light_lux: Math.round(radiationWm2 * 120),
+      soil_moisture_pct: Number.isFinite(soilVolumetric)
+        ? Math.round(Math.min(1, Math.max(0, soilVolumetric)) * 100)
+        : fallback.soil_moisture_pct,
+      pressure_hpa: Number(Number(current.surface_pressure ?? fallback.pressure_hpa).toFixed(1)),
+      source: "weather",
+      data_provider: "Open-Meteo",
+      rain_gauge_type: "weather_model",
+      wind_sensor_type: "weather_model",
+      soil_sensor_type: "weather_model",
+      sensor_status: {
+        temperature_humidity_ok: true,
+        rain_detection_ok: true,
+        wind_ok: true,
+        light_ok: true,
+        soil_ok: true,
+      },
+    };
+    localStorage.setItem(cacheKey, JSON.stringify({ savedAt: Date.now(), data }));
+    return data;
+  } catch {
+    try {
+      const cached = JSON.parse(localStorage.getItem(cacheKey) || "null") as { data?: Telemetry } | null;
+      if (cached?.data) return { ...cached.data, source: "cached", data_provider: "Open-Meteo cache" };
+    } catch {
+      localStorage.removeItem(cacheKey);
+    }
+    return fallback;
+  }
+}
+
 export async function runDemoScenario(scenario: "normal" | "heat" | "rain" | "wind" | "spray-unsafe") {
   return request(`/api/demo/${scenario}`, { accepted: false }, { method: "POST" });
 }
