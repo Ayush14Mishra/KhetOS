@@ -1,0 +1,29 @@
+{
+  "tomato:flowering": {
+    "crop": "tomato", "growth_stage": "flowering",
+    "heat_warning_c": 35, "heat_danger_c": 38,
+    "humidity_warning_pct": 85,
+    "heavy_rain_warning_mm_h": 7.5, "heavy_rain_danger_mm_h": 15,
+    "wind_warning_kmh": 12, "wind_danger_kmh": 20,
+    "spray_max_wind_kmh": 15, "spray_max_rain_mm_h": 0.2, "spray_max_humidity_pct": 88,
+    "soil_moisture_min_pct": 30, "soil_moisture_max_pct": 75
+  },
+  "onion:vegetative": {
+    "crop": "onion", "growth_stage": "vegetative",
+    "heat_warning_c": 34, "heat_danger_c": 37,
+    "humidity_warning_pct": 85,
+    "heavy_rain_warning_mm_h": 7.5, "heavy_rain_danger_mm_h": 15,
+    "wind_warning_kmh": 12, "wind_danger_kmh": 20,
+    "spray_max_wind_kmh": 14, "spray_max_rain_mm_h": 0.2, "spray_max_humidity_pct": 85,
+    "soil_moisture_min_pct": 28, "soil_moisture_max_pct": 72
+  },
+  "wheat:vegetative": {
+    "crop": "wheat", "growth_stage": "vegetative",
+    "heat_warning_c": 32, "heat_danger_c": 35,
+    "humidity_warning_pct": 88,
+    "heavy_rain_warning_mm_h": 10, "heavy_rain_danger_mm_h": 20,
+    "wind_warning_kmh": 15, "wind_danger_kmh": 25,
+    "spray_max_wind_kmh": 18, "spray_max_rain_mm_h": 0.3, "spray_max_humidity_pct": 90,
+    "soil_moisture_min_pct": 24, "soil_moisture_max_pct": 70
+  }
+}

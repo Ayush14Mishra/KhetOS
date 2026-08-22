@@ -1,0 +1,11 @@
+{
+  "name": "ग्रामीण Connect",
+  "short_name": "ग्रामीण",
+  "description": "Offline crop microclimate and farmer decision system",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f2f4f0",
+  "theme_color": "#176746",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
+

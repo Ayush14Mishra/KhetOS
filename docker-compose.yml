@@ -1,0 +1,68 @@
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes: ["mongo_data:/data/db"]
+
+  influxdb:
+    image: influxdb:2.7
+    restart: unless-stopped
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: gramin-connect-admin
+      DOCKER_INFLUXDB_INIT_ORG: gramin-connect
+      DOCKER_INFLUXDB_INIT_BUCKET: telemetry
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: gramin-connect-token
+    volumes: ["influx_data:/var/lib/influxdb2"]
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      MONGO_URL: mongodb://mongo:27017
+      INFLUX_URL: http://influxdb:8086
+      INFLUX_TOKEN: gramin-connect-token
+      INFLUX_ORG: gramin-connect
+      INFLUX_BUCKET: telemetry
+      DATA_GOV_API_KEY: ${DATA_GOV_API_KEY:-579b464db66ec23bdd000001cdd3946e44ce4aad7209ff7b23ac571b}
+      DEMO_MODE: ${DEMO_MODE:-true}
+      AUTH_SECRET: ${AUTH_SECRET:-change-this-local-secret-before-cloud-deployment}
+      DEVICE_INGEST_KEY: ${DEVICE_INGEST_KEY:-}
+      WEATHER_FORECAST_API_URL: ${WEATHER_FORECAST_API_URL:-https://api.open-meteo.com/v1/forecast}
+      CORS_ORIGINS: http://localhost:5173,http://localhost:3000
+    depends_on: [mongo, influxdb]
+    volumes: ["local_logs:/app/data/logs"]
+    ports: ["8000:8000"]
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_LOCAL_API_EMAIL: ${NEXT_PUBLIC_LOCAL_API_EMAIL:-worker@gramin.local}
+      NEXT_PUBLIC_LOCAL_API_PASSWORD: ${NEXT_PUBLIC_LOCAL_API_PASSWORD:-Worker@123}
+    depends_on: [backend]
+    ports: ["5173:5173"]
+
+  grafana:
+    image: grafana/grafana:11.6.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: gramin-connect
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on: [influxdb]
+    ports: ["3001:3000"]
+
+volumes:
+  mongo_data:
+  influx_data:
+  local_logs:

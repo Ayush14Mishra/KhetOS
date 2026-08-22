@@ -1,0 +1,15 @@
+{
+  "title": "Gramin Connect — Live Microclimate",
+  "uid": "gramin-connect",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1s",
+  "time": {"from":"now-6h","to":"now"},
+  "panels": [
+    {"id":1,"type":"timeseries","title":"Temperature (°C)","gridPos":{"x":0,"y":0,"w":12,"h":8},"targets":[{"query":"from(bucket: \"telemetry\") |> range(start: v.timeRangeStart) |> filter(fn: (r) => r._measurement == \"microclimate\" and r._field == \"temperature_c\")"}]},
+    {"id":2,"type":"timeseries","title":"Humidity and Soil Moisture (%)","gridPos":{"x":12,"y":0,"w":12,"h":8},"targets":[{"query":"from(bucket: \"telemetry\") |> range(start: v.timeRangeStart) |> filter(fn: (r) => r._measurement == \"microclimate\" and (r._field == \"humidity_pct\" or r._field == \"soil_moisture_pct\"))"}]},
+    {"id":3,"type":"timeseries","title":"Wind Speed (km/h)","gridPos":{"x":0,"y":8,"w":12,"h":8},"targets":[{"query":"from(bucket: \"telemetry\") |> range(start: v.timeRangeStart) |> filter(fn: (r) => r._measurement == \"microclimate\" and r._field == \"wind_speed_kmh\")"}]},
+    {"id":4,"type":"timeseries","title":"Rainfall (mm/h)","gridPos":{"x":12,"y":8,"w":12,"h":8},"targets":[{"query":"from(bucket: \"telemetry\") |> range(start: v.timeRangeStart) |> filter(fn: (r) => r._measurement == \"microclimate\" and r._field == \"rainfall_mm_h\")"}]}
+  ]
+}
+
