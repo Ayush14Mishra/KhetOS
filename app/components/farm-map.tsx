@@ -1,12 +1,17 @@
 "use client";
 
 import { useMemo } from "react";
+import type { Telemetry, Zone } from "../lib/types";
 export default function FarmMap({
   latitude,
   longitude,
+  zones,
+  reading,
 }: {
   latitude: number;
   longitude: number;
+  zones: Zone[];
+  reading: Telemetry;
 }) {
   const mapUrl = useMemo(() => {
     const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
@@ -43,6 +48,23 @@ export default function FarmMap({
           Open in Google Maps
         </a>
       </div>
+      <section className="campus-zone-panel" aria-label="Acropolis campus monitoring zones">
+        <div className="campus-zone-heading">
+          <div><span className="micro-label">ACROPOLIS CAMPUS · 3 MONITORING ZONES</span><strong>Each packet is tagged to the ESP32&apos;s physical zone ID</strong></div>
+          <small>Only a zone with an ESP32 packet is marked live.</small>
+        </div>
+        <div className="campus-zone-grid">
+          {zones.map((zone, index) => {
+            const active = zone.id === reading.zone_id;
+            return <article className={`campus-zone ${active ? "active" : ""}`} key={zone.id}>
+              <span>Zone {index + 1}</span>
+              <strong>{zone.name}</strong>
+              <small>{zone.id} · {active ? "LIVE SENSOR PACKET" : "NODE NOT REPORTING"}</small>
+              {active ? <p>{reading.temperature_c}°C · {reading.humidity_pct}% RH · soil {reading.soil_moisture_pct}%</p> : <p>Place an ESP32 here and set its <code>ZONE_ID</code> to {zone.id}.</p>}
+            </article>;
+          })}
+        </div>
+      </section>
     </div>
   );
 }

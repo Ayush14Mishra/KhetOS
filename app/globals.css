@@ -1047,6 +1047,22 @@ a {
 }
 
 .farm-map-only { display: block; }
+.campus-zone-panel { margin-top: 14px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper-2); }
+.campus-zone-heading { display: flex; justify-content: space-between; gap: 16px; align-items: end; }
+.campus-zone-heading div { display: grid; gap: 4px; }
+.campus-zone-heading strong { color: var(--ink); font-size: 14px; }
+.campus-zone-heading small { max-width: 230px; color: var(--muted); font-size: 11px; text-align: right; }
+.campus-zone-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; margin-top: 13px; }
+.campus-zone { min-height: 130px; padding: 13px; border: 1px dashed #a7b6aa; border-radius: 11px; background: #f9fbf7; }
+.campus-zone.active { border: 2px solid #207249; background: #e9f7ed; box-shadow: inset 0 0 0 1px rgba(32,114,73,.08); }
+.campus-zone > span { display: inline-block; padding: 3px 6px; border-radius: 5px; background: #e5ece4; color: #4a6150; font-size: 10px; font-weight: 800; text-transform: uppercase; }
+.campus-zone.active > span { background: #207249; color: #fff; }
+.campus-zone strong, .campus-zone small { display: block; }
+.campus-zone strong { margin-top: 11px; color: var(--ink); font-size: 13px; }
+.campus-zone small { margin-top: 4px; color: var(--muted); font-size: 10px; }
+.campus-zone p { margin: 12px 0 0; color: #486053; font-size: 11px; line-height: 1.45; }
+.campus-zone code { padding: 1px 3px; border-radius: 3px; background: #e9eeeb; font-size: 10px; }
+@media (max-width: 700px) { .campus-zone-heading { display: grid; } .campus-zone-heading small { text-align: left; } .campus-zone-grid { grid-template-columns: 1fr; } }
 .zone-tiles span {
   width: max-content;
   padding: 4px 6px;

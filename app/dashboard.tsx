@@ -120,7 +120,7 @@ const defaultProfile: FarmerProfile = {
   mobile: "",
   state: "Madhya Pradesh",
   district: "Indore",
-  village: "Indore",
+  village: "Acropolis Campus, Manglia",
   land_acres: 2,
   ownership: "owner",
   category: "general",
@@ -148,15 +148,15 @@ const defaultProfile: FarmerProfile = {
   has_aadhaar: false,
   has_farmer_id: false,
   agristack_farmer_id: "",
-  latitude: 22.7196,
-  longitude: 75.8577,
+  latitude: 22.821292,
+  longitude: 75.943164,
 };
 
 function fallbackTelemetry(tick = 0): Telemetry {
   return {
     farm_id: "FARM-001",
     device_id: "ESP32-EDGE-01",
-    zone_id: "Z02",
+    zone_id: "ACR-Z01",
     timestamp: new Date().toISOString(),
     temperature_c: Number((31.7 + Math.sin(tick / 7) * 0.4).toFixed(1)),
     humidity_pct: Math.round(68 + Math.sin(tick / 9) * 2),
@@ -186,7 +186,7 @@ const fallbackDecision: Decision = {
 };
 const fallbackEarlyWarning: EarlyWarning = {
   farm_id: "FARM-001",
-  zone_id: "Z02",
+  zone_id: "ACR-Z01",
   horizon_minutes: 60,
   status: "danger",
   summary: "High wind is already above the spray threshold; drift risk is rising.",
@@ -228,8 +228,8 @@ const fallbackWeatherForecast: WeatherForecast = {
   farm_id: "FARM-001",
   provider: "Open-Meteo",
   forecast_type: "External forecast unavailable; field sensors remain the decision source.",
-  latitude: 22.7196,
-  longitude: 75.8577,
+  latitude: 22.821292,
+  longitude: 75.943164,
   timezone: "Asia/Kolkata",
   cached: false,
   current: {},
@@ -675,63 +675,39 @@ function recommendedGuide(r: Telemetry, spray: Decision, pest: PestDetection): G
 function zonesFor(r: Telemetry): Zone[] {
   return [
     {
-      id: "Z01",
-      name: "North loam",
-      soil_type: "Loamy",
-      crop: "Tomato",
-      area_acres: 0.65,
-      moisture: Math.min(100, r.soil_moisture_pct + 14),
-      health: "good",
+      id: "ACR-Z01",
+      name: "Demo plot · sensor station",
+      soil_type: "Field observation area",
+      crop: "Wheat / Rice / Soybean demo",
+      area_acres: 0.25,
+      moisture: r.zone_id === "ACR-Z01" ? r.soil_moisture_pct : 0,
+      health: r.zone_id === "ACR-Z01" ? "good" : "watch",
       polygon: [
-        [0.0006, -0.0008],
-        [0.0007, 0.0001],
-        [0.0001, 0.0002],
-        [0, -0.0007],
+        [0.0004, -0.0005], [0.0004, 0], [0, 0], [0, -0.0005],
       ],
     },
     {
-      id: "Z02",
-      name: "East sandy strip",
-      soil_type: "Sandy",
-      crop: "Tomato",
-      area_acres: 0.45,
-      moisture: r.soil_moisture_pct,
-      health: r.soil_moisture_pct < 40 ? "risk" : "watch",
+      id: "ACR-Z02",
+      name: "East monitoring area",
+      soil_type: "Additional node location",
+      crop: "Wheat / Rice / Soybean demo",
+      area_acres: 0.25,
+      moisture: r.zone_id === "ACR-Z02" ? r.soil_moisture_pct : 0,
+      health: r.zone_id === "ACR-Z02" ? "good" : "watch",
       polygon: [
-        [0.0007, 0.0001],
-        [0.0006, 0.0008],
-        [0, 0.0007],
-        [0.0001, 0.0002],
+        [0.0004, 0.0005], [0.0004, 0.001], [0, 0.001], [0, 0.0005],
       ],
     },
     {
-      id: "Z03",
-      name: "Lower clay bed",
-      soil_type: "Clay",
-      crop: "Chilli",
-      area_acres: 0.6,
-      moisture: Math.min(100, r.soil_moisture_pct + 23),
-      health: "watch",
+      id: "ACR-Z03",
+      name: "South monitoring area",
+      soil_type: "Additional node location",
+      crop: "Wheat / Rice / Soybean demo",
+      area_acres: 0.25,
+      moisture: r.zone_id === "ACR-Z03" ? r.soil_moisture_pct : 0,
+      health: r.zone_id === "ACR-Z03" ? "good" : "watch",
       polygon: [
-        [0, -0.0007],
-        [0.0001, 0.0002],
-        [-0.0006, 0.0003],
-        [-0.0007, -0.0006],
-      ],
-    },
-    {
-      id: "Z04",
-      name: "Nursery corner",
-      soil_type: "Potting mix",
-      crop: "Seedlings",
-      area_acres: 0.3,
-      moisture: Math.min(100, r.soil_moisture_pct + 9),
-      health: "good",
-      polygon: [
-        [0.0001, 0.0002],
-        [0, 0.0007],
-        [-0.0005, 0.0008],
-        [-0.0006, 0.0003],
+        [-0.0004, -0.0005], [-0.0004, 0], [-0.0008, 0], [-0.0008, -0.0005],
       ],
     },
   ];
@@ -2218,6 +2194,8 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
                 <FarmMap
                   latitude={profile.latitude}
                   longitude={profile.longitude}
+                  zones={zones}
+                  reading={reading}
                 />
               </article>
             </section>

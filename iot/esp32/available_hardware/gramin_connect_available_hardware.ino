@@ -23,7 +23,9 @@ const char* API_URL = "http://YOUR_LAPTOP_IP:8000/api/telemetry";
 const char* DEVICE_KEY = ""; // Must match DEVICE_INGEST_KEY only if you configured one.
 
 const char* FARM_ID = "FARM-001";
-const char* ZONE_ID = "ZONE-01";
+// Change this only when you physically move this ESP32 to another marked area.
+// ACR-Z01 = demo plot, ACR-Z02 = east area, ACR-Z03 = south area.
+const char* ZONE_ID = "ACR-Z01";
 const char* DEVICE_ID = "ESP32-NODE-01";
 
 #define DHT_PIN 4

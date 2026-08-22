@@ -73,7 +73,7 @@ async def demo_loop() -> None:
         if settings.demo_mode:
             reading = Telemetry(
                 farm_id="FARM-001",
-                zone_id="ZONE-01",
+                zone_id="ACR-Z01",
                 device_id="BLE-NODE-01",
                 gateway_id="BLE-GATEWAY-01",
                 source="demo",
@@ -444,7 +444,7 @@ async def demo_scenario(scenario: str, user: CurrentUser = Depends(get_current_u
         raise HTTPException(404, f"Unknown scenario. Use: {', '.join(values)}")
     demo_override_until = asyncio.get_running_loop().time() + 45
     base = {
-        "farm_id": "FARM-001", "zone_id": "ZONE-01", "device_id": "DEMO-NODE", "gateway_id": "DEMO-GATEWAY", "source": "demo",
+        "farm_id": "FARM-001", "zone_id": "ACR-Z01", "device_id": "DEMO-NODE", "gateway_id": "DEMO-GATEWAY", "source": "demo",
         "temperature_c": 31.5, "humidity_pct": 68, "rainfall_mm_h": 0, "wind_speed_kmh": 8, "wind_direction_deg": 180,
         "light_lux": 41000, "soil_moisture_pct": 44, "soil_temperature_c": 27, "soil_ph": 6.8, "soil_ec_ds_m": 1.1,
         "battery_pct": 92, "rssi_dbm": -58,
