@@ -962,6 +962,8 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
     [systemHealth, setSystemHealth] = useState<SystemStatus>(fallbackSystemStatus),
     [forecast, setForecast] = useState<WeatherForecast>(fallbackWeatherForecast),
     [demoBusy, setDemoBusy] = useState(""),
+    [demoScenario, setDemoScenario] = useState<"normal" | "heat" | "rain" | "wind" | "spray-unsafe">("wind"),
+    [demoAcknowledged, setDemoAcknowledged] = useState(false),
     [weatherJury, setWeatherJury] = useState<Jury>(fallbackJury),
     [schemes, setSchemes] = useState<SchemeMatch[]>(fallbackSchemes),
     [prices, setPrices] = useState<MarketPrice[]>(fallbackPrices),
@@ -1499,21 +1501,41 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
   const activeAlert = spray.alerts?.find((alert) => alert.severity === "red") || spray.alerts?.find((alert) => alert.severity === "yellow");
   const sensorReady = (key: string) => reading.source === "demo" || reading.sensor_status?.[key] !== false;
   const soilLabel = spray.soil_condition?.label || (reading.soil_moisture_pct < 30 ? "Dry" : reading.soil_moisture_pct > 75 ? "Too wet" : "Optimal");
+  const demoScenarioCopy = {
+    normal: { severity: "safe" as const, title: "Field conditions normal", message: "All monitored values are inside the configured limits.", action: "Farm work may continue", temperature: 30.4, humidity: 64, rain: 0, wind: 8.2, pattern: "none" },
+    heat: { severity: "danger" as const, title: "Heat stress warning", message: "Temperature has crossed 38°C. Protect workers and irrigate only if soil condition requires it.", action: "Pause field work and inspect crop", temperature: 39.2, humidity: 48, rain: 0, wind: 9.4, pattern: "three_short" },
+    rain: { severity: "danger" as const, title: "Heavy rainfall warning", message: "Heavy rain is detected. Stop spraying and protect harvested produce.", action: "Stop spraying and secure produce", temperature: 29.1, humidity: 91, rain: 12.6, wind: 11.8, pattern: "two_long" },
+    wind: { severity: "danger" as const, title: "High wind warning", message: "Wind is above the 15 km/h spray limit. Chemical drift risk is high.", action: "Do not spray until wind reduces", temperature: 32.1, humidity: 67, rain: 0, wind: 21.6, pattern: "one_long_two_short" },
+    "spray-unsafe": { severity: "danger" as const, title: "Spraying is unsafe", message: "Wind and humidity conditions can cause spray drift and poor coverage.", action: "Postpone spraying and retry later", temperature: 33.4, humidity: 84, rain: 1.8, wind: 18.7, pattern: "continuous_pulse" },
+  };
+  const speakFarmerAlert = () => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    window.speechSynthesis.cancel();
+    const selected = demoScenarioCopy[demoScenario];
+    const speech = new SpeechSynthesisUtterance(
+      demoScenario === "normal"
+        ? "खेत की स्थिति सामान्य है।"
+        : `${selected.title}. ${selected.action}.`,
+    );
+    speech.lang = demoScenario === "normal" ? "hi-IN" : "en-IN";
+    speech.rate = 0.9;
+    window.speechSynthesis.speak(speech);
+  };
   const runJudgeScenario = async (scenario: "normal" | "heat" | "rain" | "wind" | "spray-unsafe") => {
+    const selected = demoScenarioCopy[scenario];
+    const now = new Date().toISOString();
     setDemoBusy(scenario);
-    await runDemoScenario(scenario);
-    const [nextReading, nextDecision, nextWarning, nextSystem] = await Promise.all([
-      latestTelemetry("FARM-001", reading),
-      fetchDecision("FARM-001", spray, profile.crop, profile.growth_stage),
-      fetchEarlyWarning("FARM-001", earlyWarning, profile.crop, profile.growth_stage),
-      fetchSystemStatus("FARM-001", systemHealth),
-    ]);
-    setReading(nextReading);
-    setSpray(nextDecision);
-    setEarlyWarning(nextWarning);
-    setSystemHealth(nextSystem);
+    setDemoScenario(scenario);
+    setDemoAcknowledged(false);
+    setReading((current) => ({ ...current, timestamp: now, temperature_c: selected.temperature, humidity_pct: selected.humidity, rainfall_mm_h: selected.rain, wind_speed_kmh: selected.wind, source: "demo" }));
+    setSpray((current) => ({ ...current, severity: selected.severity, spray_allowed: scenario === "normal", title: selected.title, reason: selected.message, confidence: 94, alerts: scenario === "normal" ? [] : [{ code: `demo_${scenario}`, severity: "red", title: selected.title, message: selected.message, action: selected.action }] }));
+    setEarlyWarning((current) => ({ ...current, status: selected.severity, summary: selected.message, source: "cached", current: { temperature_c: selected.temperature, wind_speed_kmh: selected.wind, rainfall_mm_h: selected.rain, humidity_pct: selected.humidity } }));
+    setSystemHealth((current) => ({ ...current, generated_at: now, packet_age_seconds: 0, connection: "offline/cached", data_source: "demo", actuator: { ...current.actuator, buzzer_active: scenario !== "normal", buzzer_pattern: selected.pattern, spray_relay_locked: scenario !== "normal" } }));
+    setNotifications((current) => [{ id: `demo-${Date.now()}`, title: selected.title, message: selected.action, severity: scenario === "normal" ? "info" : "danger", created_at: now, status: "demo-ready", channel: "dashboard + local buzzer + voice + phone queue" }, ...current].slice(0, 6));
+    setNotificationsRead(false);
     setView("dashboard");
-    setDemoBusy("");
+    void runDemoScenario(scenario).catch(() => undefined);
+    window.setTimeout(() => setDemoBusy(""), 350);
   };
   const driestZone = [...zones].sort((a, b) => a.moisture - b.moisture)[0];
   const topScheme = safeSchemes[0] || fallbackSchemes[0];
@@ -1877,8 +1899,28 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
               </section>
 
               <section className="judge-scenarios" aria-label="Judge demonstration controls">
-                <div><span className="micro-label">JUDGE DEMONSTRATION</span><strong>Trigger the complete sensor → rule → alert → actuator flow</strong></div>
+                <div><span className="micro-label">JUDGE DEMONSTRATION · SIMULATED SENSOR DATA</span><strong>Choose a field condition to show the complete farmer-alert flow</strong></div>
                 <div>{(["normal", "heat", "rain", "wind", "spray-unsafe"] as const).map((scenario) => <button key={scenario} disabled={Boolean(demoBusy)} onClick={() => runJudgeScenario(scenario)}>{demoBusy === scenario ? "Running…" : scenario.replace("-", " ")}</button>)}</div>
+              </section>
+
+              <section className={`farmer-alert-demo ${demoScenarioCopy[demoScenario].severity}`} aria-label="Farmer alert delivery demonstration">
+                <div className="farmer-alert-summary">
+                  <span className="farmer-alert-icon"><Siren size={24} /></span>
+                  <div>
+                    <span className="micro-label">FARMER ALERT · DEMO MODE</span>
+                    <h3>{demoScenarioCopy[demoScenario].title}</h3>
+                    <p>{demoScenarioCopy[demoScenario].action}</p>
+                  </div>
+                </div>
+                <div className="farmer-alert-channels">
+                  <div><BellRing size={18} /><span>Local buzzer</span><strong>{demoScenario === "normal" ? "Standby" : "Active now"}</strong></div>
+                  <button type="button" onClick={speakFarmerAlert}><Volume2 size={18} /><span>Voice alert</span><strong>Play aloud</strong></button>
+                  <div><Smartphone size={18} /><span>Phone alert</span><strong>{online ? `Ready · ${maskedMobile}` : "Queued offline"}</strong></div>
+                </div>
+                <button className={demoAcknowledged ? "alert-acknowledge acknowledged" : "alert-acknowledge"} type="button" onClick={() => setDemoAcknowledged(true)}>
+                  <CircleCheckBig size={17} /> {demoAcknowledged ? "Farmer acknowledged" : "I understand — mark as seen"}
+                </button>
+                <small>Hardware-independent presentation mode uses the same safety thresholds. Real sensors can replace the simulated readings without changing this alert flow.</small>
               </section>
 
               <div className="sensor-grid">
