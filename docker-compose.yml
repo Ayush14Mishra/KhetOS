@@ -32,6 +32,7 @@ services:
       AUTH_SECRET: ${AUTH_SECRET:-change-this-local-secret-before-cloud-deployment}
       DEVICE_INGEST_KEY: ${DEVICE_INGEST_KEY:-}
       WEATHER_FORECAST_API_URL: ${WEATHER_FORECAST_API_URL:-https://api.open-meteo.com/v1/forecast}
+      OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY:-}
       CORS_ORIGINS: http://localhost:5173,http://localhost:3000
     depends_on: [mongo, influxdb]
     volumes: ["local_logs:/app/data/logs"]

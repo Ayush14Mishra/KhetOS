@@ -331,13 +331,75 @@ async def weather_forecast(
         "current": "temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,wind_speed_10m,wind_direction_10m,weather_code",
         "hourly": "temperature_2m,relative_humidity_2m,apparent_temperature,precipitation_probability,precipitation,wind_speed_10m,wind_direction_10m,wind_gusts_10m,weather_code",
     }
+    async def get_open_meteo(client: httpx.AsyncClient) -> tuple[str, dict]:
+        response = await client.get(settings.weather_forecast_api_url, params=params)
+        response.raise_for_status()
+        return "Open-Meteo", response.json()
+
+    async def get_met_no(client: httpx.AsyncClient) -> tuple[str, dict]:
+        response = await client.get(
+            settings.met_no_forecast_api_url,
+            params={"lat": latitude, "lon": longitude},
+            headers={"User-Agent": settings.weather_api_user_agent},
+        )
+        response.raise_for_status()
+        details = response.json()["properties"]["timeseries"][0]["data"]
+        instant = details["instant"]["details"]
+        rain = details.get("next_1_hours", {}).get("details", {}).get("precipitation_amount", 0)
+        return "MET Norway", {
+            "temperature_2m": instant.get("air_temperature"),
+            "relative_humidity_2m": instant.get("relative_humidity"),
+            "precipitation": rain,
+            "wind_speed_10m": round(float(instant.get("wind_speed", 0)) * 3.6, 1),
+            "wind_direction_10m": instant.get("wind_from_direction"),
+        }
+
+    async def get_openweather(client: httpx.AsyncClient) -> tuple[str, dict] | None:
+        if not settings.openweather_api_key:
+            return None
+        response = await client.get(
+            settings.openweather_api_url,
+            params={"lat": latitude, "lon": longitude, "appid": settings.openweather_api_key, "units": "metric"},
+        )
+        response.raise_for_status()
+        payload = response.json()
+        return "OpenWeather", {
+            "temperature_2m": payload.get("main", {}).get("temp"),
+            "relative_humidity_2m": payload.get("main", {}).get("humidity"),
+            "precipitation": payload.get("rain", {}).get("1h", 0),
+            "wind_speed_10m": round(float(payload.get("wind", {}).get("speed", 0)) * 3.6, 1),
+            "wind_direction_10m": payload.get("wind", {}).get("deg"),
+        }
+
     try:
         async with httpx.AsyncClient(timeout=8) as client:
-            response = await client.get(settings.weather_forecast_api_url, params=params)
-            response.raise_for_status()
-            raw = response.json()
-    except (httpx.HTTPError, ValueError) as error:
+            results = await asyncio.gather(get_open_meteo(client), get_met_no(client), get_openweather(client), return_exceptions=True)
+    except httpx.HTTPError as error:
         raise HTTPException(503, f"Weather forecast is temporarily unavailable: {error}")
+
+    sources: list[tuple[str, dict]] = [item for item in results if isinstance(item, tuple)]
+    open_meteo = next((data for name, data in sources if name == "Open-Meteo"), None)
+    if not open_meteo:
+        raise HTTPException(503, "Open-Meteo forecast is temporarily unavailable")
+    raw = open_meteo
+    current_sources = [
+        {
+            "temperature_2m": raw.get("current", {}).get("temperature_2m"),
+            "relative_humidity_2m": raw.get("current", {}).get("relative_humidity_2m"),
+            "precipitation": raw.get("current", {}).get("precipitation"),
+            "wind_speed_10m": raw.get("current", {}).get("wind_speed_10m"),
+            "wind_direction_10m": raw.get("current", {}).get("wind_direction_10m"),
+        },
+        *[data for name, data in sources if name != "Open-Meteo"],
+    ]
+
+    def consensus(field: str):
+        values = [float(data[field]) for data in current_sources if data.get(field) is not None]
+        if field == "wind_direction_10m" and values:
+            sin_mean = sum(math.sin(math.radians(value)) for value in values) / len(values)
+            cos_mean = sum(math.cos(math.radians(value)) for value in values) / len(values)
+            return round((math.degrees(math.atan2(sin_mean, cos_mean)) + 360) % 360, 1)
+        return round(sum(values) / len(values), 1) if values else None
 
     hourly = raw.get("hourly", {})
     times = hourly.get("time", [])
@@ -358,13 +420,21 @@ async def weather_forecast(
     ]
     result = {
         "farm_id": farm_id,
-        "provider": "Open-Meteo",
-        "forecast_type": "external regional forecast; do not use as a replacement for field sensors",
+        "provider": f"Forecast consensus · {' + '.join(name for name, _ in sources)}",
+        "forecast_type": f"{len(sources)} independent forecast sources compared; local field sensors remain the decision source",
         "latitude": raw.get("latitude", latitude),
         "longitude": raw.get("longitude", longitude),
         "timezone": raw.get("timezone", "auto"),
-        "current": raw.get("current", {}),
+        "current": {
+            **raw.get("current", {}),
+            "temperature_2m": consensus("temperature_2m"),
+            "relative_humidity_2m": consensus("relative_humidity_2m"),
+            "precipitation": consensus("precipitation"),
+            "wind_speed_10m": consensus("wind_speed_10m"),
+            "wind_direction_10m": consensus("wind_direction_10m"),
+        },
         "hours": hours,
+        "sources_used": [name for name, _ in sources],
         "cached": False,
     }
     forecast_cache[cache_key] = (time.monotonic(), result)
