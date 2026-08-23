@@ -180,6 +180,100 @@ type OpenMeteoCurrent = {
   surface_pressure?: number;
 };
 
+type MetNoDetails = {
+  air_temperature?: number;
+  relative_humidity?: number;
+  wind_speed?: number;
+  wind_from_direction?: number;
+  air_pressure_at_sea_level?: number;
+  cloud_area_fraction?: number;
+};
+
+type MetNoPayload = {
+  properties?: {
+    timeseries?: Array<{
+      time?: string;
+      data?: {
+        instant?: { details?: MetNoDetails };
+        next_1_hours?: { details?: { precipitation_amount?: number } };
+      };
+    }>;
+  };
+};
+
+function estimatedSolarRadiation(
+  timestamp: string,
+  latitude: number,
+  longitude: number,
+  cloudPct: number,
+) {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return 0;
+  const start = Date.UTC(date.getUTCFullYear(), 0, 0);
+  const day = Math.floor((date.getTime() - start) / 86_400_000);
+  const hour = date.getUTCHours() + date.getUTCMinutes() / 60;
+  const gamma = (2 * Math.PI / 365) * (day - 1 + (hour - 12) / 24);
+  const equationOfTime = 229.18 * (0.000075 + 0.001868 * Math.cos(gamma) - 0.032077 * Math.sin(gamma) - 0.014615 * Math.cos(2 * gamma) - 0.040849 * Math.sin(2 * gamma));
+  const declination = 0.006918 - 0.399912 * Math.cos(gamma) + 0.070257 * Math.sin(gamma) - 0.006758 * Math.cos(2 * gamma) + 0.000907 * Math.sin(2 * gamma) - 0.002697 * Math.cos(3 * gamma) + 0.00148 * Math.sin(3 * gamma);
+  const solarMinutes = hour * 60 + equationOfTime + 4 * longitude;
+  const hourAngle = (solarMinutes / 4 - 180) * Math.PI / 180;
+  const latRad = latitude * Math.PI / 180;
+  const cosZenith = Math.sin(latRad) * Math.sin(declination) + Math.cos(latRad) * Math.cos(declination) * Math.cos(hourAngle);
+  if (cosZenith <= 0) return 0;
+  const clearSky = 1000 * Math.pow(cosZenith, 1.2);
+  const cloudFraction = Math.min(1, Math.max(0, cloudPct / 100));
+  return Math.round(Math.max(0, clearSky * (1 - 0.75 * Math.pow(cloudFraction, 3.4))));
+}
+
+async function metNorwayTelemetry(
+  latitude: number,
+  longitude: number,
+  fallback: Telemetry,
+): Promise<Telemetry> {
+  const url = new URL("https://api.met.no/weatherapi/locationforecast/2.0/compact");
+  // Four decimals is the precision recommended by MET Norway for cacheable
+  // location forecasts and is more precise than the underlying model grid.
+  url.searchParams.set("lat", latitude.toFixed(4));
+  url.searchParams.set("lon", longitude.toFixed(4));
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) throw new Error(`MET Norway ${response.status}`);
+  const payload = (await response.json()) as MetNoPayload;
+  const point = payload.properties?.timeseries?.[0];
+  const details = point?.data?.instant?.details;
+  if (!details || typeof details.air_temperature !== "number") {
+    throw new Error("MET Norway current forecast unavailable");
+  }
+
+  const timestamp = point?.time || new Date().toISOString();
+  const rainfall = Math.max(0, Number(point?.data?.next_1_hours?.details?.precipitation_amount ?? 0));
+  const solarWm2 = estimatedSolarRadiation(timestamp, latitude, longitude, Number(details.cloud_area_fraction ?? 0));
+  return {
+    ...fallback,
+    device_id: "MET-NORWAY",
+    timestamp,
+    temperature_c: Number(details.air_temperature.toFixed(1)),
+    humidity_pct: Math.round(Number(details.relative_humidity ?? fallback.humidity_pct)),
+    rainfall_mm_h: Number(rainfall.toFixed(1)),
+    rain_detected: rainfall > 0,
+    wind_speed_kmh: Number((Number(details.wind_speed ?? 0) * 3.6).toFixed(1)),
+    wind_direction_deg: Math.round(Number(details.wind_from_direction ?? fallback.wind_direction_deg)),
+    solar_radiation_wm2: solarWm2,
+    light_lux: Math.round(solarWm2 * 120),
+    pressure_hpa: Number(Number(details.air_pressure_at_sea_level ?? fallback.pressure_hpa).toFixed(1)),
+    source: "weather",
+    data_provider: "MET Norway",
+    rain_gauge_type: "weather_model",
+    wind_sensor_type: "weather_model",
+    sensor_status: {
+      temperature_humidity_ok: true,
+      rain_detection_ok: true,
+      wind_ok: true,
+      light_ok: true,
+      soil_ok: false,
+    },
+  };
+}
+
 /**
  * Hardware-independent live readings for the public demo. Open-Meteo provides
  * current model/observation-blended weather at the saved farm coordinates.
@@ -191,6 +285,15 @@ export async function liveWeatherTelemetry(
   longitude: number,
   fallback: Telemetry,
 ): Promise<Telemetry> {
+  const cacheKey = `${CACHE_PREFIX}weather:${latitude.toFixed(4)},${longitude.toFixed(4)}`;
+  try {
+    const data = await metNorwayTelemetry(latitude, longitude, fallback);
+    localStorage.setItem(cacheKey, JSON.stringify({ savedAt: Date.now(), data }));
+    return data;
+  } catch {
+    // Open-Meteo remains an independent fallback when MET Norway is unavailable.
+  }
+
   const params = new URLSearchParams({
     latitude: String(latitude),
     longitude: String(longitude),
@@ -213,8 +316,6 @@ export async function liveWeatherTelemetry(
     wind_speed_unit: "kmh",
     precipitation_unit: "mm",
   });
-  const cacheKey = `${CACHE_PREFIX}open-meteo:${latitude.toFixed(4)},${longitude.toFixed(4)}`;
-
   try {
     const response = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`, {
       cache: "no-store",
@@ -271,7 +372,7 @@ export async function liveWeatherTelemetry(
   } catch {
     try {
       const cached = JSON.parse(localStorage.getItem(cacheKey) || "null") as { data?: Telemetry } | null;
-      if (cached?.data) return { ...cached.data, source: "cached", data_provider: "Open-Meteo cache" };
+      if (cached?.data) return { ...cached.data, source: "cached", data_provider: `${cached.data.data_provider || "Weather API"} cache` };
     } catch {
       localStorage.removeItem(cacheKey);
     }
