@@ -1548,19 +1548,21 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
       : "safe";
   const heatStatusLabel = heatStatus === "danger" ? "Severe heat stress risk" : heatStatus === "watch" ? "Heat stress watch" : "Heat conditions normal";
   const activeAlert = spray.alerts?.find((alert) => alert.severity === "red") || spray.alerts?.find((alert) => alert.severity === "yellow");
-  const weatherReading = reading.source === "weather" || Boolean(reading.data_provider?.toLowerCase().includes("open-meteo"));
+  const weatherReading = reading.source === "weather" || Boolean(reading.data_provider?.toLowerCase().includes("meteo") || reading.data_provider?.toLowerCase().includes("met norway"));
   const sensorReady = (key: string) =>
     reading.source !== "demo" && reading.sensor_status?.[key] !== false;
   const weatherUpdatedAt = Number.isNaN(new Date(reading.timestamp).getTime())
     ? ""
     : new Date(reading.timestamp).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+  const weatherProvider = (reading.data_provider || "Weather API").replace(/ cache$/i, "").toUpperCase();
   const liveReadingNote = reading.source === "weather"
-    ? `FORECAST NOW · ${weatherUpdatedAt}`
+    ? `${weatherProvider} · ${weatherUpdatedAt}`
     : reading.source === "cached" && weatherReading
-      ? `LAST FORECAST · ${weatherUpdatedAt}`
+      ? `CACHED ${weatherProvider} · ${weatherUpdatedAt}`
       : reading.source === "demo"
         ? "WEATHER API UNAVAILABLE"
         : t("live");
+  const unavailableReadingNote = reading.source === "demo" ? "WEATHER API UNAVAILABLE" : "SENSOR NOT CONNECTED";
   const solarRadiationWm2 = reading.solar_radiation_wm2 ?? Math.round(reading.light_lux / 120);
   const soilLabel = spray.soil_condition?.label || (reading.soil_moisture_pct < 30 ? "Dry" : reading.soil_moisture_pct > 75 ? "Too wet" : "Optimal");
   const demoScenarioCopy = {
@@ -1990,7 +1992,7 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
                   label={t("temperature")}
                   value={sensorReady("temperature_humidity_ok") ? reading.temperature_c : "—"}
                   unit={sensorReady("temperature_humidity_ok") ? "°C" : ""}
-                  note={sensorReady("temperature_humidity_ok") ? liveReadingNote : "SENSOR NOT CONNECTED"}
+                  note={sensorReady("temperature_humidity_ok") ? liveReadingNote : unavailableReadingNote}
                   risk={sensorReady("temperature_humidity_ok") && reading.temperature_c > 35}
                 />
                 <SensorCard
@@ -1998,14 +2000,14 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
                   label={t("humidity")}
                   value={sensorReady("temperature_humidity_ok") ? reading.humidity_pct : "—"}
                   unit={sensorReady("temperature_humidity_ok") ? "%" : ""}
-                  note={sensorReady("temperature_humidity_ok") ? liveReadingNote : "SENSOR NOT CONNECTED"}
+                  note={sensorReady("temperature_humidity_ok") ? liveReadingNote : unavailableReadingNote}
                 />
                 <SensorCard
                   icon={CloudSun}
                   label={reading.rain_gauge_type === "raindrop_detector_not_quantitative" ? "Rain detection" : t("rainfall")}
                   value={!sensorReady("rain_detection_ok") ? "—" : reading.rain_gauge_type === "raindrop_detector_not_quantitative" ? (reading.rain_detected ? "YES" : "NO") : reading.rainfall_mm_h}
                   unit={reading.rain_gauge_type === "raindrop_detector_not_quantitative" ? "" : "mm/h"}
-                  note={!sensorReady("rain_detection_ok") ? "SENSOR NOT CONNECTED" : reading.rain_gauge_type === "raindrop_detector_not_quantitative" ? "Detection only · not mm/h" : liveReadingNote}
+                  note={!sensorReady("rain_detection_ok") ? unavailableReadingNote : reading.rain_gauge_type === "raindrop_detector_not_quantitative" ? "Detection only · not mm/h" : liveReadingNote}
                   risk={reading.rainfall_mm_h > 8}
                 />
                 <SensorCard
@@ -2013,7 +2015,7 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
                   label="Wind speed"
                   value={sensorReady("wind_ok") ? reading.wind_speed_kmh : "—"}
                   unit={sensorReady("wind_ok") ? "km/h" : ""}
-                  note={sensorReady("wind_ok") ? liveReadingNote : "SENSOR NOT CONNECTED"}
+                  note={sensorReady("wind_ok") ? liveReadingNote : unavailableReadingNote}
                   risk={sensorReady("wind_ok") && reading.wind_speed_kmh > 15}
                 />
                 <SensorCard
@@ -2021,22 +2023,22 @@ export default function Dashboard({ onSignOut }: { onSignOut?: () => void }) {
                   label="Wind direction"
                   value={sensorReady("wind_ok") ? windDirection.split(" · ")[0] : "—"}
                   unit={sensorReady("wind_ok") ? `${Math.round(reading.wind_direction_deg)}°` : ""}
-                  note={sensorReady("wind_ok") ? windDirection.split(" · ")[1] : "SENSOR NOT CONNECTED"}
+                  note={sensorReady("wind_ok") ? `${windDirection.split(" · ")[1]} · ${weatherProvider}` : unavailableReadingNote}
                 />
                 <SensorCard
                   icon={Lightbulb}
                   label={weatherReading ? "Solar intensity" : t("light")}
                   value={sensorReady("light_ok") ? (weatherReading ? solarRadiationWm2 : (reading.light_lux / 1000).toFixed(1)) : "—"}
                   unit={sensorReady("light_ok") ? (weatherReading ? "W/m²" : "klux") : ""}
-                  note={sensorReady("light_ok") ? (weatherReading ? `FORECAST SOLAR · ${weatherUpdatedAt}` : t("live")) : "WEATHER API UNAVAILABLE"}
+                  note={sensorReady("light_ok") ? (weatherReading ? `${reading.data_provider === "MET Norway" ? "ESTIMATED" : "FORECAST"} SOLAR · ${weatherUpdatedAt}` : t("live")) : unavailableReadingNote}
                 />
                 <SensorCard
                   icon={Sprout}
                   label={t("soil")}
-                  value={reading.soil_moisture_pct}
-                  unit="%"
-                  note={reading.source === "weather" ? `MODELLED · OPEN-METEO` : `${soilLabel} · ${reading.zone_id}`}
-                  risk={reading.soil_moisture_pct < 30}
+                  value={sensorReady("soil_ok") ? reading.soil_moisture_pct : "—"}
+                  unit={sensorReady("soil_ok") ? "%" : ""}
+                  note={sensorReady("soil_ok") ? (reading.source === "weather" ? `MODELLED · ${weatherProvider}` : `${soilLabel} · ${reading.zone_id}`) : "SOIL SENSOR REQUIRED"}
+                  risk={sensorReady("soil_ok") && reading.soil_moisture_pct < 30}
                 />
               </div>
               <section className={`early-warning panel ${earlyWarning.status}`} aria-label="Early warning forecast">
