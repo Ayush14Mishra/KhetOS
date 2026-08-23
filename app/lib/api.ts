@@ -20,6 +20,7 @@ import type {
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const CACHE_PREFIX = "gramin-connect:";
 const LOCAL_TOKEN_KEY = "khetos:local-api-token";
+const FIREBASE_DATABASE_URL = "https://khetos-69d64-default-rtdb.firebaseio.com";
 let localLogin: Promise<string> | null = null;
 
 async function localGatewayToken(): Promise<string> {
@@ -103,6 +104,64 @@ export async function latestTelemetry(
         ? source
         : fallback.source,
   };
+}
+
+function asFiniteNumber(value: unknown): number | null {
+  const number = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+/** Reads the latest packet written by the ESP32 through Firebase. */
+export async function firebaseTelemetry(fallback: Telemetry): Promise<Telemetry | null> {
+  try {
+    const response = await fetch(
+      `${FIREBASE_DATABASE_URL}/farms/FARM-001/telemetry.json`,
+      { cache: "no-store" },
+    );
+    if (!response.ok) throw new Error(`Firebase ${response.status}`);
+    const raw = (await response.json()) as Record<string, unknown> | null;
+    if (!raw) return null;
+
+    const temperature = asFiniteNumber(raw.temperature_c);
+    const humidity = asFiniteNumber(raw.humidity_pct);
+    const rainfall = asFiniteNumber(raw.rainfall_mm_h);
+    const windSpeed = asFiniteNumber(raw.wind_speed_kmh);
+    const windDirection = asFiniteNumber(raw.wind_direction_deg);
+    const light = asFiniteNumber(raw.light_lux);
+    const soil = asFiniteNumber(raw.soil_moisture_pct);
+    if (temperature === null || humidity === null || windSpeed === null) return null;
+
+    return {
+      ...fallback,
+      device_id: String(raw.device_id || "ESP32"),
+      zone_id: String(raw.zone_id || fallback.zone_id || "ACR-Z01"),
+      timestamp: typeof raw.timestamp === "string" ? raw.timestamp : new Date().toISOString(),
+      temperature_c: Number(temperature.toFixed(1)),
+      humidity_pct: Math.round(humidity),
+      rainfall_mm_h: Math.max(0, rainfall ?? 0),
+      rain_detected: Boolean(raw.rain_detected) || (rainfall ?? 0) > 0,
+      wind_speed_kmh: Math.max(0, Number(windSpeed.toFixed(1))),
+      wind_direction_deg: Math.round(windDirection ?? fallback.wind_direction_deg),
+      light_lux: Math.max(0, light ?? 0),
+      soil_moisture_pct: soil === null ? fallback.soil_moisture_pct : Math.max(0, Math.min(100, soil)),
+      pressure_hpa: asFiniteNumber(raw.pressure_hpa) ?? fallback.pressure_hpa,
+      battery_pct: asFiniteNumber(raw.battery_pct) ?? fallback.battery_pct,
+      source: "live",
+      data_provider: "Firebase · ESP32",
+      rain_gauge_type: "esp32_sensor",
+      wind_sensor_type: "esp32_sensor",
+      soil_sensor_type: soil === null ? undefined : "esp32_sensor",
+      sensor_status: {
+        temperature_humidity_ok: true,
+        rain_detection_ok: rainfall !== null,
+        wind_ok: true,
+        light_ok: light !== null,
+        soil_ok: soil !== null,
+      },
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function earlyWarning(
