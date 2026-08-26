@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "KhetOS",
+  metadataBase: new URL("https://ayush14mishra.github.io"),
+  title: "KhetOS — Field intelligence for safer farming",
   description:
     "Offline-first crop microclimate, safety, scheme and market intelligence for small farms.",
   other: {
@@ -11,6 +12,20 @@ export const metadata: Metadata = {
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
+  },
+  openGraph: {
+    title: "KhetOS — Field intelligence for safer farming",
+    description: "Offline-first field monitoring, explainable alerts and safer crop decisions.",
+    url: "/KhetOS/",
+    siteName: "KhetOS",
+    type: "website",
+    images: [{ url: "/KhetOS/og.png", width: 1200, height: 630, alt: "KhetOS — Field intelligence for safer farming" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "KhetOS — Field intelligence for safer farming",
+    description: "Offline-first field monitoring, explainable alerts and safer crop decisions.",
+    images: ["/KhetOS/og.png"],
   },
 };
 
